@@ -21,10 +21,10 @@ export function registerFunctionsInvokeCommand(functionsCmd: Command): void {
   functionsCmd
     .command('invoke <slug>')
     .description('Invoke an edge function')
-    .option('--data <json>', 'JSON body to send to the function')
+    .option('--data <json>', 'JSON body to send with POST, PUT, or PATCH')
     .option(
       '--data-file <path>',
-      'Path to a JSON file to send as the body. Mutually exclusive with --data.'
+      'Path to a JSON body for POST, PUT, or PATCH. Mutually exclusive with --data.'
     )
     .option('--method <method>', 'HTTP method (GET, POST, PUT, PATCH, DELETE)', 'POST')
     .action(async (slug: string, opts, cmd) => {
@@ -49,10 +49,10 @@ export function registerFunctionsInvokeCommand(functionsCmd: Command): void {
 
         const fetchOpts: RequestInit = { method, headers };
 
-        if (
-          (opts.data !== undefined || opts.dataFile !== undefined) &&
-          ['POST', 'PUT', 'PATCH'].includes(method)
-        ) {
+        if (opts.data !== undefined || opts.dataFile !== undefined) {
+          if (!['POST', 'PUT', 'PATCH'].includes(method)) {
+            throw new CLIError('--data and --data-file are only supported with POST, PUT, or PATCH.');
+          }
           let body: string;
           if (opts.dataFile !== undefined) {
             try {

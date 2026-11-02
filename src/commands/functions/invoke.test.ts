@@ -71,6 +71,41 @@ describe('functions invoke --data validation', () => {
     expect(init.body).toBe('{"a":1}');
   });
 
+  it.each([
+    ['GET', '--data'],
+    ['GET', '--data-file'],
+    ['DELETE', '--data'],
+    ['DELETE', '--data-file'],
+  ])('rejects %s with %s before reading a file or making a request', async (method, option) => {
+    const value = option === '--data-file' ? './body.json' : '{"a":1}';
+    await expect(runInvoke(['ingest', '--method', method, option, value])).rejects.toThrow(
+      'only supported with POST, PUT, or PATCH'
+    );
+    expect(readFileSync).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['GET', 'DELETE'])('allows %s without a body', async (method) => {
+    await runInvoke(['ingest', '--method', method]);
+
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      'https://oss.example.com/functions/ingest',
+      expect.objectContaining({ method })
+    );
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+    expect(readFileSync).not.toHaveBeenCalled();
+  });
+
+  it.each(['PUT', 'PATCH'])('sends --data-file JSON with %s', async (method) => {
+    vi.mocked(readFileSync).mockReturnValue('{"a":1}');
+
+    await runInvoke(['ingest', '--method', method, '--data-file', './body.json']);
+
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ method, body: '{"a":1}' })
+    );
+  });
+
   it('rejects an empty --data value instead of silently sending no body', async () => {
     await expect(runInvoke(['ingest', '--data', ''])).rejects.toThrow('Invalid JSON in --data');
     expect(fetchMock).not.toHaveBeenCalled();
@@ -114,6 +149,17 @@ describe('functions invoke --data validation', () => {
 
     await expect(runInvoke(['ingest', '--data-file', './body.json'])).rejects.toThrow(
       'Invalid JSON in --data-file at ./body.json'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unreadable --data-file before making a request', async () => {
+    vi.mocked(readFileSync).mockImplementation(() => {
+      throw new Error('ENOENT: no such file');
+    });
+
+    await expect(runInvoke(['ingest', '--data-file', './missing.json'])).rejects.toThrow(
+      'Could not read --data-file at ./missing.json: ENOENT: no such file'
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });

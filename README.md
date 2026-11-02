@@ -542,6 +542,8 @@ npx @insforge/cli functions invoke my-function --data '{"key": "value"}' --json
 npx @insforge/cli functions invoke my-function --data-file ./body.json
 ```
 
+`--data` and `--data-file` require POST, PUT, or PATCH. GET and DELETE can be invoked without a body.
+
 > **Windows PowerShell:** PowerShell can strip or mangle quotes inside a `--data` argument.
 > Either escape the inner double quotes — `--data '{\"key\":\"value\"}'` — or avoid the
 > problem entirely with `--data-file <path.json>`.
