@@ -11,7 +11,7 @@ import { CLIError, getRootOpts, handleError, isTransientApiError } from '../../l
 import { isInteractive } from '../../lib/prompts.js';
 import { requireAuth } from '../../lib/credentials.js';
 import { buildOssHost, getProjectConfig } from '../../lib/config.js';
-import { outputJson, outputInfo } from '../../lib/output.js';
+import { outputJson, outputInfo, outputSuccess } from '../../lib/output.js';
 import { captureEvent, shutdownAnalytics } from '../../lib/analytics.js';
 import { runBranchSwitch } from './switch.js';
 import { readBranchWithRetry } from './poll.js';
@@ -146,6 +146,9 @@ export function registerBranchCreateCommand(branch: Command): void {
         if (json) {
           outputJson({ branch: ready, serving });
         } else if (ready.branch_state === 'ready' && serving) {
+          if (!isInteractive) {
+            outputSuccess(`Branch '${name}' is ready${opts.switch ? ' and active' : ''}`);
+          }
           if (opts.switch) {
             outputInfo(
               '⚠ Re-source your dev server env (.env) to pick up the new INSFORGE_URL / ANON_KEY.',

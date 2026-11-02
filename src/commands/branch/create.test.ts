@@ -67,12 +67,17 @@ const spinnerMock = {
   stop: vi.fn(),
 };
 vi.mock('@clack/prompts', () => ({
-  spinner: () => spinnerMock,
+  spinner: vi.fn(() => spinnerMock),
 }));
 
 // These tests assert on the spinner-driven non-JSON path, so force the
 // isInteractive guard on — vitest's stdin/stdout aren't real TTYs.
-vi.mock('../../lib/prompts.js', () => ({ isInteractive: true }));
+const promptState = vi.hoisted(() => ({ isInteractive: true }));
+vi.mock('../../lib/prompts.js', () => ({
+  get isInteractive() {
+    return promptState.isInteractive;
+  },
+}));
 
 // Run `fn` with process.exit + stderr captured, and always restore them. Returns
 // the exit code fn triggered (undefined if it never exited). Timer/mock lifecycle
@@ -98,6 +103,7 @@ async function withCapturedExit(fn: () => Promise<void>): Promise<number | undef
 describe('branch create', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    promptState.isInteractive = true;
     spinnerMock.start.mockReset();
     spinnerMock.message.mockReset();
     spinnerMock.stop.mockReset();
@@ -204,6 +210,71 @@ describe('branch create', () => {
     const out = logs.join('\n');
     expect(out).toContain('branch-id');
     expect(out).toContain('feat-x');
+  });
+
+  it.each([false, true])('prints noninteractive success with auto-switch=%s', async (autoSwitch) => {
+    promptState.isInteractive = false;
+    const { getProjectConfig } = await import('../../lib/config.js');
+    (getProjectConfig as Mock).mockReturnValue({ project_id: 'p1' });
+    const { spinner } = await import('@clack/prompts');
+    const { runBranchSwitch } = await import('./switch.js');
+    const program = new Command().exitOverride();
+    registerBranchCreateCommand(program);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await program.parseAsync(['create', 'feat-x', ...(autoSwitch ? [] : ['--no-switch'])], {
+        from: 'user',
+      });
+      expect(log).toHaveBeenCalledWith(
+        `✓ Branch 'feat-x' is ready${autoSwitch ? ' and active' : ''}`
+      );
+      expect(spinner).not.toHaveBeenCalled();
+      expect(runBranchSwitch).toHaveBeenCalledTimes(autoSwitch ? 1 : 0);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('keeps noninteractive JSON output to one document without a success banner', async () => {
+    promptState.isInteractive = false;
+    const { getProjectConfig } = await import('../../lib/config.js');
+    (getProjectConfig as Mock).mockReturnValue({ project_id: 'p1' });
+    const { spinner } = await import('@clack/prompts');
+    const program = new Command().exitOverride();
+    program.option('--json');
+    registerBranchCreateCommand(program);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await program.parseAsync(['create', 'feat-x', '--no-switch', '--json'], { from: 'user' });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(log.mock.calls[0][0])).toMatchObject({
+        branch: { id: 'branch-id', name: 'feat-x' },
+        serving: true,
+      });
+      expect(spinner).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('does not print noninteractive success when switching fails', async () => {
+    promptState.isInteractive = false;
+    const { getProjectConfig } = await import('../../lib/config.js');
+    (getProjectConfig as Mock).mockReturnValue({ project_id: 'p1' });
+    const { runBranchSwitch } = await import('./switch.js');
+    (runBranchSwitch as Mock).mockRejectedValueOnce(new CLIError('switch failed'));
+    const program = new Command().exitOverride();
+    registerBranchCreateCommand(program);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const exitCode = await withCapturedExit(async () => {
+        await program.parseAsync(['create', 'feat-x'], { from: 'user' }).catch(() => {});
+      });
+      expect(exitCode).toBe(1);
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('happy path without --no-switch invokes runBranchSwitch', async () => {
